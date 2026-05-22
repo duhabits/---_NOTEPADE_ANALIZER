@@ -646,5 +646,10 @@ int main()
     std::cout << "\nБаза данных сохранена в: " << DATABASE_FILE << std::endl;
     std::cout << "Готово!" << std::endl;
 
+#ifdef _WIN32
+    std::cout << "\nНажмите любую клавишу для выхода...";
+    std::cin.get();
+#endif
+
     return 0;
 }
