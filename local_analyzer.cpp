@@ -256,6 +256,76 @@ std::vector<FileInfo> parseNotepadBinFiles(const fs::path &tabStateDir)
     return results;
 }
 
+// Декодировать XML entity-ссылки (&#xHHHH;, &#DDDD;, &amp;, &lt;, etc.) в UTF-8
+std::string decodeXmlEntities(const std::string &text)
+{
+    std::string result;
+    size_t i = 0;
+    while (i < text.length())
+    {
+        size_t ampPos = text.find('&', i);
+        if (ampPos == std::string::npos)
+        {
+            result.append(text, i, text.length() - i);
+            break;
+        }
+        result.append(text, i, ampPos - i);
+
+        size_t semiPos = text.find(';', ampPos + 1);
+        if (semiPos == std::string::npos)
+        {
+            result.append(text, ampPos, text.length() - ampPos);
+            break;
+        }
+
+        std::string entity = text.substr(ampPos + 1, semiPos - ampPos - 1);
+
+        if (!entity.empty() && entity[0] == '#')
+        {
+            uint32_t cp = 0;
+            if (entity.size() > 1 && entity[1] == 'x')
+                cp = std::stoul(entity.substr(2), nullptr, 16);
+            else
+                cp = std::stoul(entity.substr(1), nullptr, 10);
+
+            if (cp < 0x80)
+                result += static_cast<char>(cp);
+            else if (cp < 0x800)
+            {
+                result += static_cast<char>(0xC0 | (cp >> 6));
+                result += static_cast<char>(0x80 | (cp & 0x3F));
+            }
+            else if (cp < 0x10000)
+            {
+                result += static_cast<char>(0xE0 | (cp >> 12));
+                result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                result += static_cast<char>(0x80 | (cp & 0x3F));
+            }
+            else if (cp <= 0x10FFFF)
+            {
+                result += static_cast<char>(0xF0 | (cp >> 18));
+                result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+                result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                result += static_cast<char>(0x80 | (cp & 0x3F));
+            }
+        }
+        else if (entity == "amp") result += '&';
+        else if (entity == "lt") result += '<';
+        else if (entity == "gt") result += '>';
+        else if (entity == "quot") result += '\"';
+        else if (entity == "apos") result += '\'';
+        else
+        {
+            result += '&';
+            result += entity;
+            result += ';';
+        }
+
+        i = semiPos + 1;
+    }
+    return result;
+}
+
 // Извлечь атрибут из XML строки
 std::string extractXmlAttribute(const std::string &line, const std::string &attrName)
 {
@@ -269,7 +339,7 @@ std::string extractXmlAttribute(const std::string &line, const std::string &attr
     if (end == std::string::npos)
         return "";
 
-    return line.substr(start, end - start);
+    return decodeXmlEntities(line.substr(start, end - start));
 }
 
 // Парсинг session.xml от Notepad++ из текущей директории
